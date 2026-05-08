@@ -3,34 +3,22 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-
-# ============================================================
-# PAGE SETUP
-# ============================================================
-
 st.set_page_config(
-    page_title="ETC Launcher Chamber Simulation",
-    page_icon="⚡",
+    page_title="ETC APS Voice Combat Simulation",
+    page_icon="🛡️",
     layout="wide"
 )
 
-st.title("⚡ ETC Launcher Chamber Simulation with Contour Results")
-st.caption(
-    "Simplified academic simulation of plasma-assisted ETC launcher chamber behavior: "
-    "pressure, temperature, velocity, contour fields, and interception timing."
-)
+st.title("🛡️ Voice-Controlled APS + ETC Real-Time Simulation")
+st.caption("ETC chamber working animation with combat voice alerts and projectile motion visualization.")
 
-st.warning(
-    "Academic simplified model only. Use this for thesis visualization/trend explanation, "
-    "not as a validated weapon-design solver."
-)
-
+st.warning("Academic visualization model only. Not a validated weapon design solver.")
 
 # ============================================================
 # SIDEBAR INPUTS
 # ============================================================
 
-st.sidebar.header("Input Parameters")
+st.sidebar.header("ETC Launcher Inputs")
 
 propellant_mass_g = st.sidebar.slider("Propellant Mass (g)", 20, 300, 120, 5)
 electric_pulse_kj = st.sidebar.slider("Electric Pulse Energy (kJ)", 5, 120, 35, 5)
@@ -38,454 +26,349 @@ plasma_efficiency = st.sidebar.slider("Plasma Coupling Efficiency", 0.05, 0.60, 
 
 chamber_length_mm = st.sidebar.slider("Chamber Length (mm)", 40, 250, 120, 5)
 chamber_diameter_mm = st.sidebar.slider("Chamber Diameter (mm)", 20, 80, 50, 2)
-barrel_length_mm = st.sidebar.slider("Launcher / Barrel Length (mm)", 150, 1500, 500, 25)
+barrel_length_mm = st.sidebar.slider("Barrel Length (mm)", 150, 1500, 500, 25)
 
-interceptor_mass_g = st.sidebar.slider("Interceptor Mass (g)", 20, 300, 80, 5)
-interceptor_diameter_mm = st.sidebar.slider("Interceptor Diameter (mm)", 10, 50, 25, 1)
+projectile_mass_g = st.sidebar.slider("Projectile / Interceptor Mass (g)", 20, 300, 80, 5)
+projectile_diameter_mm = st.sidebar.slider("Projectile Diameter (mm)", 10, 50, 25, 1)
 
-threat_distance_m = st.sidebar.slider("Threat Distance (m)", 20, 500, 180, 10)
-threat_velocity_ms = st.sidebar.slider("Threat Velocity (m/s)", 100, 900, 200, 10)
-intercept_distance_m = st.sidebar.slider("Desired Interception Distance (m)", 20, 200, 80, 5)
+st.sidebar.header("Threat / APS Inputs")
 
+threat_velocity = st.sidebar.slider("Threat Velocity (m/s)", 100, 900, 200, 10)
+threat_distance = st.sidebar.slider("Threat Distance (m)", 20, 500, 180, 10)
+interception_distance = st.sidebar.slider("Interception Distance (m)", 20, 200, 80, 5)
+
+voice_mode = st.sidebar.checkbox("Enable Voice Combat Mode", True)
+animation_speed = st.sidebar.slider("Animation Speed", 40, 180, 90, 10)
 
 # ============================================================
-# SIMPLIFIED PHYSICS MODEL
+# SIMPLE ETC MODEL
 # ============================================================
 
-def safe_clip(value, low, high):
-    return max(low, min(value, high))
+def clip(v, lo, hi):
+    return max(lo, min(v, hi))
 
+def calculate_etc():
+    mp = propellant_mass_g / 1000
+    Ei = electric_pulse_kj * 1000
+    mi = projectile_mass_g / 1000
 
-def calculate_outputs(
-    propellant_mass_g,
-    electric_pulse_kj,
-    plasma_efficiency,
-    chamber_length_mm,
-    chamber_diameter_mm,
-    barrel_length_mm,
-    interceptor_mass_g,
-    interceptor_diameter_mm,
-    threat_distance_m,
-    threat_velocity_ms,
-    intercept_distance_m
-):
-    mp = propellant_mass_g / 1000.0
-    Ei = electric_pulse_kj * 1000.0
-    mi = interceptor_mass_g / 1000.0
-
-    Lc = chamber_length_mm / 1000.0
-    Dc = chamber_diameter_mm / 1000.0
-    Lb = barrel_length_mm / 1000.0
-    Di = interceptor_diameter_mm / 1000.0
+    Lc = chamber_length_mm / 1000
+    Dc = chamber_diameter_mm / 1000
+    Lb = barrel_length_mm / 1000
+    Dp = projectile_diameter_mm / 1000
 
     chamber_volume = np.pi * (Dc / 2) ** 2 * Lc
-    bore_area = np.pi * (Di / 2) ** 2
+    bore_area = np.pi * (Dp / 2) ** 2
 
     propellant_energy_density = 3.0e6
-    ballistic_efficiency = 0.18
     gas_fraction = 0.85
-    gas_R = 300.0
+    gas_R = 300
     gamma = 1.22
+    ballistic_efficiency = 0.18
 
     chemical_energy = mp * propellant_energy_density
-    coupled_electric_energy = Ei * plasma_efficiency
-    total_effective_heat = chemical_energy + coupled_electric_energy
+    electric_energy = Ei * plasma_efficiency
+    total_energy = chemical_energy + electric_energy
 
     gas_mass = max(mp * gas_fraction, 1e-6)
+    cv = gas_R / (gamma - 1)
 
-    cv = gas_R / (gamma - 1.0)
-    temperature_K = 300.0 + total_effective_heat / (gas_mass * cv)
-    temperature_K = safe_clip(temperature_K, 500.0, 6500.0)
+    temperature = 300 + total_energy / (gas_mass * cv)
+    temperature = clip(temperature, 500, 6500)
 
-    pressure_pa = (gas_mass * gas_R * temperature_K) / max(chamber_volume, 1e-9)
-    pressure_mpa = pressure_pa / 1e6
-    pressure_mpa = safe_clip(pressure_mpa, 5.0, 450.0)
+    pressure_pa = gas_mass * gas_R * temperature / max(chamber_volume, 1e-9)
+    pressure_mpa = clip(pressure_pa / 1e6, 5, 450)
 
-    chamber_to_barrel_volume = bore_area * Lb
     useful_work = min(
-        total_effective_heat * ballistic_efficiency,
-        pressure_pa * chamber_to_barrel_volume * 0.55
+        total_energy * ballistic_efficiency,
+        pressure_pa * bore_area * Lb * 0.55
     )
 
-    muzzle_velocity = np.sqrt(max(2.0 * useful_work / max(mi, 1e-6), 0.0))
-    muzzle_velocity = safe_clip(muzzle_velocity, 50.0, 950.0)
+    muzzle_velocity = np.sqrt(max(2 * useful_work / max(mi, 1e-6), 0))
+    muzzle_velocity = clip(muzzle_velocity, 50, 950)
 
-    avg_acceleration = muzzle_velocity ** 2 / (2 * max(Lb, 1e-6))
-    launch_time = muzzle_velocity / max(avg_acceleration, 1e-6)
+    acceleration = muzzle_velocity ** 2 / (2 * max(Lb, 1e-6))
+    launch_time = muzzle_velocity / max(acceleration, 1e-6)
 
-    threat_time_to_vehicle = threat_distance_m / threat_velocity_ms
-    interceptor_flight_time = intercept_distance_m / muzzle_velocity
+    threat_tti = threat_distance / threat_velocity
+    interceptor_flight_time = interception_distance / muzzle_velocity
     total_interception_time = launch_time + interceptor_flight_time
-    time_margin = threat_time_to_vehicle - total_interception_time
+    time_margin = threat_tti - total_interception_time
 
-    if time_margin > 0.10:
-        engagement_status = "FEASIBLE WITH GOOD TIME MARGIN"
-    elif time_margin > 0:
-        engagement_status = "FEASIBLE BUT TIGHT WINDOW"
-    else:
-        engagement_status = "NOT FEASIBLE FOR SELECTED PARAMETERS"
+    return pressure_mpa, temperature, muzzle_velocity, launch_time, total_interception_time, time_margin
 
-    return {
-        "chemical_energy": chemical_energy,
-        "coupled_electric_energy": coupled_electric_energy,
-        "total_effective_heat": total_effective_heat,
-        "chamber_volume": chamber_volume,
-        "bore_area": bore_area,
-        "temperature_K": temperature_K,
-        "pressure_mpa": pressure_mpa,
-        "muzzle_velocity": muzzle_velocity,
-        "avg_acceleration": avg_acceleration,
-        "launch_time": launch_time,
-        "threat_time_to_vehicle": threat_time_to_vehicle,
-        "interceptor_flight_time": interceptor_flight_time,
-        "total_interception_time": total_interception_time,
-        "time_margin": time_margin,
-        "engagement_status": engagement_status
-    }
-
-
-out = calculate_outputs(
-    propellant_mass_g,
-    electric_pulse_kj,
-    plasma_efficiency,
-    chamber_length_mm,
-    chamber_diameter_mm,
-    barrel_length_mm,
-    interceptor_mass_g,
-    interceptor_diameter_mm,
-    threat_distance_m,
-    threat_velocity_ms,
-    intercept_distance_m
-)
-
+pressure_mpa, temperature_k, muzzle_velocity, launch_time, interception_time, time_margin = calculate_etc()
 
 # ============================================================
 # OUTPUT CARDS
 # ============================================================
 
-st.markdown("## Main Output Results")
-
 c1, c2, c3, c4 = st.columns(4)
 
-with c1:
-    st.metric("Peak Chamber Pressure", f"{out['pressure_mpa']:.1f} MPa")
-with c2:
-    st.metric("Peak Chamber Temperature", f"{out['temperature_K']:.0f} K")
-with c3:
-    st.metric("Muzzle Velocity", f"{out['muzzle_velocity']:.1f} m/s")
-with c4:
-    st.metric("Interception Time", f"{out['total_interception_time']:.4f} s")
+c1.metric("Peak Pressure", f"{pressure_mpa:.1f} MPa")
+c2.metric("Peak Temperature", f"{temperature_k:.0f} K")
+c3.metric("Muzzle Velocity", f"{muzzle_velocity:.1f} m/s")
+c4.metric("Interception Time", f"{interception_time:.4f} s")
 
-if out["time_margin"] > 0:
-    st.success(f"Engagement Status: {out['engagement_status']} | Time Margin: {out['time_margin']:.4f} s")
+if time_margin > 0:
+    st.success(f"Target Neutralization Feasible | Time Margin: {time_margin:.4f} s")
 else:
-    st.error(f"Engagement Status: {out['engagement_status']} | Time Deficit: {abs(out['time_margin']):.4f} s")
-
-
-# ============================================================
-# TIME HISTORY CURVES
-# ============================================================
-
-t = np.linspace(0, 5.0, 160)
-
-peak_t = 1.0 + 0.4 * (1 - plasma_efficiency)
-width = 0.55 + 0.25 * (propellant_mass_g / 300)
-
-pressure_curve = out["pressure_mpa"] * np.exp(-((t - peak_t) / width) ** 2)
-temperature_curve = 300 + (out["temperature_K"] - 300) * np.exp(-((t - peak_t) / (width * 1.15)) ** 2)
-velocity_curve = out["muzzle_velocity"] * (1 - np.exp(-t / 1.25))
-velocity_curve = np.minimum(velocity_curve, out["muzzle_velocity"])
-
-curve_df = pd.DataFrame({
-    "Time (ms)": t,
-    "Pressure (MPa)": pressure_curve,
-    "Temperature (K)": temperature_curve,
-    "Velocity (m/s)": velocity_curve
-})
-
-st.markdown("## Curves: Pressure, Temperature and Velocity")
-
-tab1, tab2, tab3 = st.tabs(["Pressure Curve", "Temperature Curve", "Velocity Curve"])
-
-with tab1:
-    fig_p = go.Figure()
-    fig_p.add_trace(go.Scatter(x=t, y=pressure_curve, mode="lines", line=dict(width=4), name="Pressure"))
-    fig_p.update_layout(
-        height=380,
-        title="Pressure vs Time",
-        xaxis_title="Time (ms)",
-        yaxis_title="Pressure (MPa)",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig_p, use_container_width=True)
-
-with tab2:
-    fig_t = go.Figure()
-    fig_t.add_trace(go.Scatter(x=t, y=temperature_curve, mode="lines", line=dict(width=4), name="Temperature"))
-    fig_t.update_layout(
-        height=380,
-        title="Temperature vs Time",
-        xaxis_title="Time (ms)",
-        yaxis_title="Temperature (K)",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig_t, use_container_width=True)
-
-with tab3:
-    fig_v = go.Figure()
-    fig_v.add_trace(go.Scatter(x=t, y=velocity_curve, mode="lines", line=dict(width=4), name="Velocity"))
-    fig_v.update_layout(
-        height=380,
-        title="Velocity vs Time",
-        xaxis_title="Time (ms)",
-        yaxis_title="Velocity (m/s)",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig_v, use_container_width=True)
-
+    st.error(f"Interception Not Feasible | Time Deficit: {abs(time_margin):.4f} s")
 
 # ============================================================
-# 2D CONTOUR FIELD MODEL
+# VOICE COMBAT MODE
 # ============================================================
 
-st.markdown("## Contour Results: Pressure, Temperature and Velocity Fields")
+if voice_mode:
+    st.markdown(
+        """
+        <script>
+        function speakCombatSequence() {
+            const messages = [
+                "Threat detected",
+                "AI classification complete",
+                "ETC launcher armed",
+                "Interceptor launched",
+                "Target neutralized"
+            ];
 
-Lc_mm = chamber_length_mm
-Lb_mm = barrel_length_mm
-total_length_mm = Lc_mm + Lb_mm
-chamber_radius_mm = chamber_diameter_mm / 2
-barrel_radius_mm = interceptor_diameter_mm / 2
+            let delay = 0;
+            messages.forEach((msg) => {
+                setTimeout(() => {
+                    let utterance = new SpeechSynthesisUtterance(msg);
+                    utterance.rate = 0.9;
+                    utterance.pitch = 0.9;
+                    utterance.volume = 1.0;
+                    window.speechSynthesis.speak(utterance);
+                }, delay);
+                delay += 1800;
+            });
+        }
+        </script>
 
-nx = 230
-ny = 95
-
-x = np.linspace(0, total_length_mm, nx)
-y = np.linspace(0, chamber_radius_mm, ny)
-X, Y = np.meshgrid(x, y)
-
-# Radius profile: chamber -> smooth contraction -> barrel
-transition_start = Lc_mm * 0.82
-transition_end = Lc_mm
-R = np.where(
-    X < transition_start,
-    chamber_radius_mm,
-    np.where(
-        X < transition_end,
-        chamber_radius_mm - (chamber_radius_mm - barrel_radius_mm) * ((X - transition_start) / max(transition_end - transition_start, 1e-6)),
-        barrel_radius_mm
+        <button onclick="speakCombatSequence()" style="
+            background-color:#00cc66;
+            color:black;
+            padding:12px 22px;
+            border:none;
+            border-radius:10px;
+            font-size:18px;
+            font-weight:bold;
+            cursor:pointer;">
+            🔊 Play Voice Combat Sequence
+        </button>
+        """,
+        unsafe_allow_html=True
     )
-)
-
-inside = Y <= R
-
-# Normalized axial position
-xn = X / max(total_length_mm, 1e-6)
-radial_factor = np.exp(-(Y / np.maximum(R, 1e-6)) ** 2 * 0.8)
-
-# Synthetic but physically shaped contour fields
-P_field = out["pressure_mpa"] * np.exp(-2.7 * xn) * radial_factor
-P_field += 0.18 * out["pressure_mpa"] * np.exp(-((X - 0.22 * Lc_mm) / (0.22 * Lc_mm + 1e-6)) ** 2) * np.exp(-(Y / (0.55 * chamber_radius_mm + 1e-6)) ** 2)
-P_field = np.where(inside, P_field, np.nan)
-
-T_field = 300 + (out["temperature_K"] - 300) * np.exp(-3.3 * xn) * np.exp(-(Y / (0.72 * np.maximum(R, 1e-6))) ** 2)
-T_field += 0.25 * (out["temperature_K"] - 300) * np.exp(-((X - 0.15 * Lc_mm) / (0.16 * Lc_mm + 1e-6)) ** 2)
-T_field = np.where(inside, T_field, np.nan)
-
-V_field = out["muzzle_velocity"] * (1 - np.exp(-3.2 * xn)) * (0.65 + 0.35 * (1 - (Y / np.maximum(R, 1e-6)) ** 2))
-V_field = np.where(inside, V_field, np.nan)
-
-contour_tabs = st.tabs(["Pressure Contour", "Temperature Contour", "Velocity Contour"])
-
-with contour_tabs[0]:
-    fig_pc = go.Figure()
-    fig_pc.add_trace(go.Contour(
-        x=x,
-        y=y,
-        z=P_field,
-        colorscale="Jet",
-        colorbar=dict(title="MPa"),
-        contours=dict(showlabels=True)
-    ))
-    fig_pc.update_layout(
-        height=470,
-        title="Pressure Contour Inside ETC Chamber and Barrel",
-        xaxis_title="Axial Length (mm)",
-        yaxis_title="Radius (mm)",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig_pc, use_container_width=True)
-
-with contour_tabs[1]:
-    fig_tc = go.Figure()
-    fig_tc.add_trace(go.Contour(
-        x=x,
-        y=y,
-        z=T_field,
-        colorscale="Hot",
-        colorbar=dict(title="K"),
-        contours=dict(showlabels=True)
-    ))
-    fig_tc.update_layout(
-        height=470,
-        title="Temperature Contour Inside ETC Chamber and Barrel",
-        xaxis_title="Axial Length (mm)",
-        yaxis_title="Radius (mm)",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig_tc, use_container_width=True)
-
-with contour_tabs[2]:
-    fig_vc = go.Figure()
-    fig_vc.add_trace(go.Contour(
-        x=x,
-        y=y,
-        z=V_field,
-        colorscale="Viridis",
-        colorbar=dict(title="m/s"),
-        contours=dict(showlabels=True)
-    ))
-    fig_vc.update_layout(
-        height=470,
-        title="Velocity Contour Inside ETC Chamber and Barrel",
-        xaxis_title="Axial Length (mm)",
-        yaxis_title="Radius (mm)",
-        template="plotly_white"
-    )
-    st.plotly_chart(fig_vc, use_container_width=True)
-
 
 # ============================================================
-# 3D ETC CHAMBER ANIMATION
+# 3D CHAMBER ANIMATION HELPERS
 # ============================================================
 
-st.markdown("## 3D ETC Chamber Working Animation")
-
-def cylinder_surface_x(x0, x1, radius, y0=0, z0=0, color="lightgray", opacity=0.35, name="Cylinder"):
+def cylinder_surface_x(x0, x1, radius, color, opacity=0.35):
     theta = np.linspace(0, 2 * np.pi, 50)
-    xx = np.linspace(x0, x1, 2)
-    theta, xx = np.meshgrid(theta, xx)
-    yy = y0 + radius * np.cos(theta)
-    zz = z0 + radius * np.sin(theta)
+    x = np.linspace(x0, x1, 2)
+    theta, x = np.meshgrid(theta, x)
+
+    y = radius * np.cos(theta)
+    z = radius * np.sin(theta)
 
     return go.Surface(
-        x=xx,
-        y=yy,
-        z=zz,
+        x=x,
+        y=y,
+        z=z,
         opacity=opacity,
         colorscale=[[0, color], [1, color]],
         showscale=False,
-        name=name,
         hoverinfo="skip"
     )
 
-def projectile_mesh(xc, length, radius):
-    return cylinder_surface_x(xc - length / 2, xc + length / 2, radius, color="darkslategray", opacity=1.0, name="Interceptor")
-
-def plasma_cloud(xc, strength):
-    u = np.linspace(0, 2 * np.pi, 25)
+def plasma_sphere(xc, strength):
+    u = np.linspace(0, 2*np.pi, 25)
     v = np.linspace(0, np.pi, 15)
     u, v = np.meshgrid(u, v)
-    r = 0.18 + 0.22 * strength
-    xx = xc + r * np.cos(u) * np.sin(v)
-    yy = r * np.sin(u) * np.sin(v)
-    zz = r * np.cos(v)
+
+    r = 0.18 + 0.35 * strength
+    x = xc + r * np.cos(u) * np.sin(v)
+    y = r * np.sin(u) * np.sin(v)
+    z = r * np.cos(v)
 
     return go.Surface(
-        x=xx,
-        y=yy,
-        z=zz,
-        opacity=0.30,
-        colorscale=[[0, "orange"], [1, "red"]],
+        x=x,
+        y=y,
+        z=z,
+        opacity=0.35,
+        colorscale=[[0, "yellow"], [0.5, "orange"], [1, "red"]],
         showscale=False,
-        name="Plasma Energy Zone",
         hoverinfo="skip"
     )
+
+def pressure_wave(xc, radius):
+    theta = np.linspace(0, 2*np.pi, 40)
+    x = np.full_like(theta, xc)
+    y = radius * np.cos(theta)
+    z = radius * np.sin(theta)
+
+    return go.Scatter3d(
+        x=x,
+        y=y,
+        z=z,
+        mode="lines",
+        line=dict(color="orange", width=6),
+        hoverinfo="skip"
+    )
+
+def projectile(xc, length, radius):
+    body = cylinder_surface_x(xc - length/2, xc + length/2, radius, "lime", 1.0)
+
+    nose = go.Cone(
+        x=[xc + length/2],
+        y=[0],
+        z=[0],
+        u=[0.8],
+        v=[0],
+        w=[0],
+        sizemode="absolute",
+        sizeref=0.35,
+        colorscale=[[0, "lime"], [1, "lime"]],
+        showscale=False,
+        hoverinfo="skip"
+    )
+
+    return [body, nose]
+
+def exhaust_trail(x0, x1):
+    return go.Scatter3d(
+        x=[x0, x1],
+        y=[0, 0],
+        z=[0, 0],
+        mode="lines",
+        line=dict(color="yellow", width=8),
+        opacity=0.45,
+        hoverinfo="skip"
+    )
+
+# ============================================================
+# 3D REAL-TIME STYLE ETC ANIMATION
+# ============================================================
+
+st.markdown("## ⚡ Real-Time ETC Chamber Working Animation")
 
 Lc = chamber_length_mm / 1000
 Lb = barrel_length_mm / 1000
 Dc = chamber_diameter_mm / 1000
-Di = interceptor_diameter_mm / 1000
+Dp = projectile_diameter_mm / 1000
 
-scale_len = 5.0 / max(Lc + Lb, 1e-6)
+scale = 5.0 / max(Lc + Lb, 1e-6)
 
 chamber_x0 = 0
-chamber_x1 = Lc * scale_len
+chamber_x1 = Lc * scale
 barrel_x0 = chamber_x1
-barrel_x1 = (Lc + Lb) * scale_len
+barrel_x1 = (Lc + Lb) * scale
 
-chamber_r = max(Dc * scale_len / 2, 0.30)
-barrel_r = max(Di * scale_len / 2, 0.14)
-proj_len = max((interceptor_diameter_mm / 1000) * scale_len * 1.2, 0.35)
-proj_r = barrel_r * 0.85
+chamber_r = max((Dc / 2) * scale, 0.32)
+barrel_r = max((Dp / 2) * scale, 0.13)
 
-n_frames = 45
-projectile_positions = np.linspace(barrel_x0 + proj_len / 2, barrel_x1 - proj_len / 2, n_frames)
+projectile_len = max(Dp * scale * 1.5, 0.35)
+projectile_r = barrel_r * 0.85
 
-base_chamber = cylinder_surface_x(chamber_x0, chamber_x1, chamber_r, color="lightsteelblue", opacity=0.30, name="Chamber")
-base_barrel = cylinder_surface_x(barrel_x0, barrel_x1, barrel_r, color="gray", opacity=0.35, name="Barrel")
+n_frames = 60
+x_positions = np.linspace(barrel_x0 + projectile_len, barrel_x1 - projectile_len/2, n_frames)
 
-axis_line = go.Scatter3d(
+time_ms = np.linspace(0, 5, n_frames)
+peak_time = 1.0 + 0.4 * (1 - plasma_efficiency)
+width = 0.6
+
+pressure_curve = pressure_mpa * np.exp(-((time_ms - peak_time) / width) ** 2)
+temperature_curve = 300 + (temperature_k - 300) * np.exp(-((time_ms - peak_time) / (width * 1.15)) ** 2)
+velocity_curve = np.minimum(muzzle_velocity * (1 - np.exp(-time_ms / 1.2)), muzzle_velocity)
+
+base_chamber = cylinder_surface_x(chamber_x0, chamber_x1, chamber_r, "lightblue", 0.22)
+base_barrel = cylinder_surface_x(barrel_x0, barrel_x1, barrel_r, "gray", 0.32)
+
+axis = go.Scatter3d(
     x=[chamber_x0, barrel_x1],
     y=[0, 0],
     z=[0, 0],
     mode="lines",
-    line=dict(width=4, color="black"),
-    name="Axis",
+    line=dict(color="white", width=3),
     hoverinfo="skip"
 )
 
-initial_projectile = projectile_mesh(projectile_positions[0], proj_len, proj_r)
-initial_plasma = plasma_cloud(chamber_x0 + 0.18, 0.2)
+initial_plasma = plasma_sphere(chamber_x0 + 0.20, 0.25)
+initial_wave = pressure_wave(chamber_x0 + 0.25, chamber_r * 0.35)
+initial_projectile = projectile(x_positions[0], projectile_len, projectile_r)
 
-state_label = go.Scatter3d(
+state_text = go.Scatter3d(
     x=[chamber_x1 * 0.45],
-    y=[-chamber_r * 1.4],
+    y=[-chamber_r * 1.55],
     z=[chamber_r * 1.2],
     mode="text",
-    text=[f"P = {pressure_curve[0]:.1f} MPa<br>T = {temperature_curve[0]:.0f} K"],
-    name="State Label",
+    text=[f"t = 0.00 ms<br>P = {pressure_curve[0]:.1f} MPa<br>T = {temperature_curve[0]:.0f} K<br>V = {velocity_curve[0]:.1f} m/s"],
     hoverinfo="skip"
 )
 
-base_data = [base_chamber, base_barrel, axis_line, initial_plasma, initial_projectile, state_label]
+base_data = [
+    base_chamber,
+    base_barrel,
+    axis,
+    initial_plasma,
+    initial_wave,
+] + initial_projectile + [
+    state_text
+]
 
 frames = []
+
 for i in range(n_frames):
     frac = i / (n_frames - 1)
-    idx = min(int(frac * (len(t) - 1)), len(t) - 1)
-    plasma_strength = max(0.05, np.exp(-((frac - 0.15) / 0.22) ** 2))
 
-    cloud = plasma_cloud(chamber_x0 + 0.18, plasma_strength)
-    proj = projectile_mesh(projectile_positions[i], proj_len, proj_r)
+    plasma_strength = np.exp(-((frac - 0.18) / 0.22) ** 2)
+    wave_x = chamber_x0 + 0.25 + frac * (barrel_x1 - chamber_x0)
 
-    label = go.Scatter3d(
-        x=[chamber_x1 * 0.45],
-        y=[-chamber_r * 1.4],
-        z=[chamber_r * 1.2],
-        mode="text",
-        text=[
-            f"t = {t[idx]:.2f} ms<br>"
-            f"P = {pressure_curve[idx]:.1f} MPa<br>"
-            f"T = {temperature_curve[idx]:.0f} K<br>"
-            f"V = {velocity_curve[idx]:.1f} m/s"
-        ],
-        hoverinfo="skip"
+    dynamic = [
+        plasma_sphere(chamber_x0 + 0.20, plasma_strength),
+        pressure_wave(wave_x, chamber_r * (0.35 + 0.45 * plasma_strength)),
+    ]
+
+    dynamic += projectile(x_positions[i], projectile_len, projectile_r)
+
+    if i > 5:
+        dynamic.append(exhaust_trail(max(chamber_x0, x_positions[i] - 0.9), x_positions[i] - 0.25))
+    else:
+        dynamic.append(exhaust_trail(chamber_x0, chamber_x0))
+
+    dynamic.append(
+        go.Scatter3d(
+            x=[chamber_x1 * 0.45],
+            y=[-chamber_r * 1.55],
+            z=[chamber_r * 1.2],
+            mode="text",
+            text=[
+                f"t = {time_ms[i]:.2f} ms<br>"
+                f"P = {pressure_curve[i]:.1f} MPa<br>"
+                f"T = {temperature_curve[i]:.0f} K<br>"
+                f"V = {velocity_curve[i]:.1f} m/s"
+            ],
+            hoverinfo="skip"
+        )
     )
 
-    frames.append(go.Frame(data=[cloud, proj, label], traces=[3, 4, 5], name=str(i)))
+    frames.append(go.Frame(data=dynamic, traces=[3,4,5,6,7,8], name=str(i)))
 
-fig3d = go.Figure(data=base_data, frames=frames)
+fig = go.Figure(data=base_data, frames=frames)
 
-fig3d.update_layout(
-    height=650,
-    title="ETC Working: Electric Pulse → Plasma → Pressure Rise → Projectile Motion",
+fig.update_layout(
+    height=680,
+    template="plotly_dark",
+    title="ETC Internal Sequence: Electric Pulse → Plasma → Pressure Wave → Projectile Acceleration",
     scene=dict(
         xaxis=dict(title="Launcher Axis", showgrid=False),
         yaxis=dict(title="Radial Direction", showgrid=False),
         zaxis=dict(title="Radial Direction", showgrid=False),
         aspectmode="manual",
-        aspectratio=dict(x=2.5, y=0.8, z=0.8),
-        camera=dict(eye=dict(x=1.6, y=-1.8, z=0.9))
+        aspectratio=dict(x=2.6, y=0.75, z=0.75),
+        camera=dict(eye=dict(x=1.6, y=-1.7, z=0.85))
     ),
     margin=dict(l=0, r=0, t=50, b=0),
     showlegend=False,
@@ -497,12 +380,12 @@ fig3d.update_layout(
             y=1.05,
             buttons=[
                 dict(
-                    label="▶ Play ETC Working Animation",
+                    label="▶ Play ETC Chamber Animation",
                     method="animate",
                     args=[
                         None,
                         dict(
-                            frame=dict(duration=90, redraw=True),
+                            frame=dict(duration=animation_speed, redraw=True),
                             transition=dict(duration=0),
                             fromcurrent=True,
                             mode="immediate"
@@ -522,82 +405,79 @@ fig3d.update_layout(
     ]
 )
 
-st.plotly_chart(fig3d, use_container_width=True)
-
+st.plotly_chart(fig, use_container_width=True)
 
 # ============================================================
-# FINAL OUTPUT TABLE
+# CURVES
 # ============================================================
 
-st.markdown("## Final Technical Output Table")
+st.markdown("## 📊 Live Ballistic Curves")
 
-output_table = pd.DataFrame({
+tab1, tab2, tab3 = st.tabs(["Pressure Curve", "Temperature Curve", "Velocity Curve"])
+
+with tab1:
+    figp = go.Figure()
+    figp.add_trace(go.Scatter(x=time_ms, y=pressure_curve, mode="lines", line=dict(width=4, color="orange")))
+    figp.update_layout(template="plotly_dark", height=350, xaxis_title="Time (ms)", yaxis_title="Pressure (MPa)")
+    st.plotly_chart(figp, use_container_width=True)
+
+with tab2:
+    figt = go.Figure()
+    figt.add_trace(go.Scatter(x=time_ms, y=temperature_curve, mode="lines", line=dict(width=4, color="red")))
+    figt.update_layout(template="plotly_dark", height=350, xaxis_title="Time (ms)", yaxis_title="Temperature (K)")
+    st.plotly_chart(figt, use_container_width=True)
+
+with tab3:
+    figv = go.Figure()
+    figv.add_trace(go.Scatter(x=time_ms, y=velocity_curve, mode="lines", line=dict(width=4, color="lime")))
+    figv.update_layout(template="plotly_dark", height=350, xaxis_title="Time (ms)", yaxis_title="Velocity (m/s)")
+    st.plotly_chart(figv, use_container_width=True)
+
+# ============================================================
+# DOWNLOAD HTML SIMULATION
+# ============================================================
+
+st.markdown("## 📥 Download Simulation")
+
+html = fig.to_html(include_plotlyjs="cdn")
+
+st.download_button(
+    label="🌐 Download ETC Chamber 3D Simulation HTML",
+    data=html.encode("utf-8"),
+    file_name="etc_chamber_real_time_simulation.html",
+    mime="text/html"
+)
+
+result_df = pd.DataFrame({
     "Parameter": [
         "Propellant Mass",
         "Electric Pulse Energy",
         "Plasma Coupling Efficiency",
-        "Chamber Length",
-        "Chamber Diameter",
-        "Barrel / Launcher Length",
-        "Interceptor Mass",
-        "Interceptor Diameter",
-        "Peak Chamber Pressure",
-        "Peak Chamber Temperature",
-        "Estimated Muzzle Velocity",
-        "Launcher Acceleration Time",
-        "Threat Distance",
-        "Threat Velocity",
-        "Threat Time-to-Vehicle",
-        "Desired Interception Distance",
-        "Interceptor Flight Time",
-        "Total Interception Time",
-        "Time Margin",
-        "Engagement Status"
+        "Peak Pressure",
+        "Peak Temperature",
+        "Muzzle Velocity",
+        "Launch Time",
+        "Interception Time",
+        "Time Margin"
     ],
     "Value": [
         f"{propellant_mass_g} g",
         f"{electric_pulse_kj} kJ",
         f"{plasma_efficiency:.2f}",
-        f"{chamber_length_mm} mm",
-        f"{chamber_diameter_mm} mm",
-        f"{barrel_length_mm} mm",
-        f"{interceptor_mass_g} g",
-        f"{interceptor_diameter_mm} mm",
-        f"{out['pressure_mpa']:.2f} MPa",
-        f"{out['temperature_K']:.0f} K",
-        f"{out['muzzle_velocity']:.2f} m/s",
-        f"{out['launch_time']:.5f} s",
-        f"{threat_distance_m} m",
-        f"{threat_velocity_ms} m/s",
-        f"{out['threat_time_to_vehicle']:.4f} s",
-        f"{intercept_distance_m} m",
-        f"{out['interceptor_flight_time']:.4f} s",
-        f"{out['total_interception_time']:.4f} s",
-        f"{out['time_margin']:.4f} s",
-        out["engagement_status"]
+        f"{pressure_mpa:.2f} MPa",
+        f"{temperature_k:.0f} K",
+        f"{muzzle_velocity:.2f} m/s",
+        f"{launch_time:.5f} s",
+        f"{interception_time:.4f} s",
+        f"{time_margin:.4f} s"
     ]
 })
 
-st.table(output_table)
+st.table(result_df)
 
-
-# ============================================================
-# THESIS EXPLANATION
-# ============================================================
-
-st.markdown("## Thesis Explanation")
-
-st.write("""
-This ETC chamber simulation app demonstrates the internal sequence of an Electro-Thermal Chemical launcher
-using a simplified academic model. The user inputs propellant mass, electric pulse energy, plasma coupling
-efficiency, chamber dimensions, and interceptor dimensions. The model estimates peak chamber pressure,
-temperature, muzzle velocity, and interception timing using energy balance, ideal gas approximation, and
-basic projectile motion.
-
-The pressure, temperature, and velocity contours show the expected spatial distribution inside the chamber
-and barrel. The maximum pressure and temperature occur near the chamber/breech region due to plasma-assisted
-energy deposition, while the velocity field increases along the barrel as the projectile accelerates toward
-the muzzle. These results are intended for conceptual thesis demonstration and trend analysis. Detailed
-validation should be performed using ANSYS Fluent transient CFD results and published ETC/internal ballistics
-literature.
-""")
+st.download_button(
+    label="📥 Download Result CSV",
+    data=result_df.to_csv(index=False).encode("utf-8"),
+    file_name="etc_chamber_simulation_results.csv",
+    mime="text/csv"
+)
